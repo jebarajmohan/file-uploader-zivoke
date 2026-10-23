@@ -7,7 +7,7 @@ enabled = true
 
 [vars]
 # Change these to match your bucket.
-AWS_REGION = "ap-south-1"
+AWS_REGION = "us-east-1"
 S3_BUCKET = "your-bucket-name"
 # Folder (key prefix) inside the bucket where uploads are stored.
 S3_PREFIX = "uploads/"
