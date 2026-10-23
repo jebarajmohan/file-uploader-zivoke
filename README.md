@@ -13,7 +13,7 @@ A single web page, served by a Cloudflare Worker, that lets someone with a passp
 
 ### 1. S3 bucket
 
-**CORS** (Bucket → Permissions → Cross-origin resource sharing): paste `aws/s3-cors.json`, replacing the origin with your Worker's URL. The `ExposeHeaders: ETag` line is required: without it, every upload fails at the end.
+**CORS** (Bucket → Permissions → Cross-origin resource sharing): paste `aws/s3-cors.json`. The `ExposeHeaders: ETag` line is required: without it, every upload fails at the end.
 
 **Lifecycle rule** (recommended): `aws/lifecycle.json` deletes parts left behind by abandoned uploads after 7 days, so you don't pay for them.
 

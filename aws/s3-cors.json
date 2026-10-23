@@ -1,6 +1,6 @@
 [
   {
-    "AllowedOrigins": ["https://file-manager-zivoke-uploader.YOUR-SUBDOMAIN.workers.dev"],
+    "AllowedOrigins": ["https://file-manager-zivoke-upload.mohan-569.workers.dev"],
     "AllowedMethods": ["PUT"],
     "AllowedHeaders": ["*"],
     "ExposeHeaders": ["ETag"],

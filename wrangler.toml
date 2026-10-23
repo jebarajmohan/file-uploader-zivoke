@@ -1,4 +1,4 @@
-name = "file-manager-zivoke-uploader"
+name = "file-manager-zivoke-upload"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
 
