@@ -1,0 +1,19 @@
+{
+    "CORSRules": [
+        {
+            "AllowedHeaders": [
+                "*"
+            ],
+            "AllowedMethods": [
+                "PUT"
+            ],
+            "AllowedOrigins": [
+                "https://file-manager-zivoke-upload.mohan-569.workers.dev"
+            ],
+            "ExposeHeaders": [
+                "ETag"
+            ],
+            "MaxAgeSeconds": 3000
+        }
+    ]
+}

@@ -1,0 +1,27 @@
+{
+  "Rules": [
+    {
+      "Expiration": {
+        "ExpiredObjectDeleteMarker": false
+      },
+      "ID": "Abort incomplete uploads after 1 day",
+      "Filter": {
+        "Prefix": "incoming/"
+      },
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    },
+    {
+      "ID": "abort-abandoned-multipart-uploads",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "uploads/"
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    }
+  ]
+}

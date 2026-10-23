@@ -1,0 +1,18 @@
+{
+    "TransitionDefaultMinimumObjectSize": "all_storage_classes_128K",
+    "Rules": [
+        {
+            "Expiration": {
+                "ExpiredObjectDeleteMarker": false
+            },
+            "ID": "Abort incomplete uploads after 1 day",
+            "Filter": {
+                "Prefix": "incoming/"
+            },
+            "Status": "Enabled",
+            "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1
+            }
+        }
+    ]
+}
