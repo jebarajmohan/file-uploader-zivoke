@@ -9,7 +9,7 @@
         "s3:AbortMultipartUpload",
         "s3:ListMultipartUploadParts"
       ],
-      "Resource": "arn:aws:s3:::your-bucket-name/uploads/*"
+      "Resource": "arn:aws:s3:::file-manager-zivoke/uploads/*"
     }
   ]
 }

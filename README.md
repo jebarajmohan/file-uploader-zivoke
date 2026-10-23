@@ -18,8 +18,8 @@ A single web page, served by a Cloudflare Worker, that lets someone with a passp
 **Lifecycle rule** (recommended): `aws/lifecycle.json` deletes parts left behind by abandoned uploads after 7 days, so you don't pay for them.
 
 ```sh
-aws s3api put-bucket-cors --bucket your-bucket-name --cors-configuration '{"CORSRules": '"$(cat aws/s3-cors.json)"'}'
-aws s3api put-bucket-lifecycle-configuration --bucket your-bucket-name --lifecycle-configuration file://aws/lifecycle.json
+aws s3api put-bucket-cors --bucket file-manager-zivoke --cors-configuration '{"CORSRules": '"$(cat aws/s3-cors.json)"'}'
+aws s3api put-bucket-lifecycle-configuration --bucket file-manager-zivoke --lifecycle-configuration file://aws/lifecycle.json
 ```
 
 ### 2. IAM user

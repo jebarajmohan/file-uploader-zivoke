@@ -8,7 +8,7 @@ enabled = true
 [vars]
 # Change these to match your bucket.
 AWS_REGION = "us-east-1"
-S3_BUCKET = "your-bucket-name"
+S3_BUCKET = "file-manager-zivoke"
 # Folder (key prefix) inside the bucket where uploads are stored.
 S3_PREFIX = "uploads/"
 
