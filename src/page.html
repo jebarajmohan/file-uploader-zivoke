@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Send a file</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f3f4fb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1f2937; }
+  main { max-width: 640px; margin: 48px auto; padding: 0 16px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 28px 32px; box-shadow: 0 8px 24px rgba(15, 23, 42, .06); }
+  h1 { margin: 0 0 12px; font-size: 26px; color: #0f172a; }
+  p { line-height: 1.55; color: #475569; }
+  label { display: block; font-weight: 600; margin: 18px 0 8px; color: #0f172a; }
+  input[type=password], input[type=file] { width: 100%; padding: 12px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; background: #fff; }
+  .buttons { display: flex; gap: 10px; margin-top: 20px; }
+  button { border: 0; border-radius: 8px; padding: 11px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  #upload { background: #1a5fd6; color: #fff; }
+  #cancel { background: #eef2f7; color: #334155; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  progress { width: 100%; height: 12px; margin-top: 24px; accent-color: #1a5fd6; }
+  #status { margin: 14px 0 0; min-height: 1.5em; }
+  #status.error { color: #b91c1c; }
+  #status.ok { color: #15803d; font-weight: 600; }
+  #stats { font-size: 14px; color: #64748b; margin: 6px 0 0; min-height: 1.2em; }
+  .hint { font-size: 14px; color: #64748b; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Send a file</h1>
+    <p>Choose one file and enter the upload passphrase you received. Large files (5 GB and more) are sent in parts directly to Amazon S3.</p>
+
+    <label for="passphrase">Upload passphrase</label>
+    <input id="passphrase" type="password" autocomplete="off">
+
+    <label for="file">File</label>
+    <input id="file" type="file">
+
+    <div class="buttons">
+      <button id="upload" type="button">Upload file</button>
+      <button id="cancel" type="button" hidden>Cancel upload</button>
+    </div>
+
+    <progress id="progress" max="1000" value="0"></progress>
+    <p id="status" role="status"></p>
+    <p id="stats"></p>
+    <p class="hint">Keep this page open until the upload completes. If the connection drops or the page is closed, choose the same file again and press Upload: it continues where it stopped.</p>
+  </div>
+</main>
+<script>
+(function () {
+  var CONCURRENCY = 4;
+  var MAX_ATTEMPTS = 6;
+  var SIGN_BATCH = 20;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var uploadBtn = $('upload'), cancelBtn = $('cancel'), fileInput = $('file'), passInput = $('passphrase');
+  var progressEl = $('progress'), statusEl = $('status'), statsEl = $('stats');
+
+  var current = null; // the upload in progress
+
+  try { passInput.value = sessionStorage.getItem('upload-passphrase') || ''; } catch (e) {}
+
+  uploadBtn.addEventListener('click', function () { start().catch(function () {}); });
+  cancelBtn.addEventListener('click', function () { if (current) current.cancel(); });
+  window.addEventListener('beforeunload', function (e) {
+    if (current) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = kind || '';
+  }
+
+  function api(path, body) {
+    return fetch('/api/' + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-upload-passphrase': passInput.value },
+      body: JSON.stringify(body || {})
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) {
+          var err = new Error(data.error || ('Upload service error (HTTP ' + res.status + ')'));
+          err.status = res.status;
+          throw err;
+        }
+        return data;
+      });
+    });
+  }
+
+  function resumeKey(file) {
+    return 'upload:' + file.name + ':' + file.size + ':' + file.lastModified;
+  }
+  function loadResume(file) {
+    try { return JSON.parse(localStorage.getItem(resumeKey(file)) || 'null'); } catch (e) { return null; }
+  }
+  function saveResume(file, state) {
+    try { localStorage.setItem(resumeKey(file), JSON.stringify(state)); } catch (e) {}
+  }
+  function clearResume(file) {
+    try { localStorage.removeItem(resumeKey(file)); } catch (e) {}
+  }
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function formatBytes(n) {
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i ? 1 : 0) + ' ' + units[i];
+  }
+  function formatTime(s) {
+    if (!isFinite(s) || s < 0) return '…';
+    s = Math.round(s);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return h ? h + 'h ' + m + 'm' : m ? m + 'm ' + sec + 's' : sec + 's';
+  }
+
+  async function start() {
+    var file = fileInput.files[0];
+    if (!passInput.value) { setStatus('Enter the upload passphrase.', 'error'); return; }
+    if (!file) { setStatus('Choose a file first.', 'error'); return; }
+    if (file.size === 0) { setStatus('That file is empty.', 'error'); return; }
+
+    uploadBtn.disabled = true; fileInput.disabled = true; passInput.disabled = true;
+    cancelBtn.hidden = false; cancelBtn.disabled = false;
+    progressEl.value = 0; statsEl.textContent = '';
+
+    var job = { cancelled: false, xhrs: new Set(), upload: null, file: file };
+    job.cancel = function () {
+      job.cancelled = true;
+      cancelBtn.disabled = true;
+      job.xhrs.forEach(function (x) { x.abort(); });
+    };
+    current = job;
+
+    try {
+      setStatus('Checking passphrase…');
+      await api('check');
+      try { sessionStorage.setItem('upload-passphrase', passInput.value); } catch (e) {}
+
+      var done = {}; // partNumber -> ETag
+      var saved = loadResume(file);
+      if (saved) {
+        setStatus('Resuming earlier upload…');
+        try {
+          var listed = await api('list-parts', { key: saved.key, uploadId: saved.uploadId });
+          listed.parts.forEach(function (p) {
+            if (p.Size === expectedPartSize(saved, file.size, p.PartNumber)) done[p.PartNumber] = p.ETag;
+          });
+          job.upload = saved;
+        } catch (e) {
+          // The old upload is gone (expired or aborted); start fresh.
+          clearResume(file);
+          done = {};
+        }
+      }
+      if (!job.upload) {
+        setStatus('Starting upload…');
+        job.upload = await api('create', { name: file.name, size: file.size, type: file.type });
+        saveResume(file, job.upload);
+      }
+
+      await uploadParts(job, done);
+      if (job.cancelled) throw cancelledError();
+
+      setStatus('Finishing up…');
+      var parts = Object.keys(done).map(function (n) { return { PartNumber: Number(n), ETag: done[n] }; });
+      var result = await api('complete', { key: job.upload.key, uploadId: job.upload.uploadId, parts: parts });
+      clearResume(file);
+      progressEl.value = 1000;
+      setStatus('Upload complete. ' + file.name + ' (' + formatBytes(file.size) + ') was received.', 'ok');
+      statsEl.textContent = 'Saved as ' + result.key;
+    } catch (err) {
+      if (job.cancelled) {
+        if (job.upload) {
+          setStatus('Cancelling…');
+          await api('abort', { key: job.upload.key, uploadId: job.upload.uploadId }).catch(function () {});
+        }
+        clearResume(file);
+        progressEl.value = 0; statsEl.textContent = '';
+        setStatus('Upload cancelled.');
+      } else {
+        setStatus('Upload did not complete: ' + err.message + ' Press Upload file to continue from where it stopped.', 'error');
+      }
+      throw err;
+    } finally {
+      current = null;
+      uploadBtn.disabled = false; fileInput.disabled = false; passInput.disabled = false;
+      cancelBtn.hidden = true;
+    }
+  }
+
+  function expectedPartSize(upload, size, n) {
+    return n < upload.partCount ? upload.partSize : size - upload.partSize * (upload.partCount - 1);
+  }
+
+  function cancelledError() { var e = new Error('Cancelled'); e.cancelled = true; return e; }
+
+  async function uploadParts(job, done) {
+    var up = job.upload, file = job.file;
+    var queue = [];
+    for (var n = 1; n <= up.partCount; n++) if (!done[n]) queue.push(n);
+
+    var bytesDone = 0;
+    Object.keys(done).forEach(function (n) { bytesDone += expectedPartSize(up, file.size, Number(n)); });
+    var inFlight = {};
+    var startedAt = Date.now(), startBytes = bytesDone;
+    var urlCache = {};
+
+    function report() {
+      var loaded = bytesDone;
+      Object.keys(inFlight).forEach(function (k) { loaded += inFlight[k]; });
+      progressEl.value = Math.floor((loaded / file.size) * 1000);
+      var secs = (Date.now() - startedAt) / 1000;
+      var speed = secs > 2 ? (loaded - startBytes) / secs : 0;
+      setStatus('Uploading ' + file.name + '… ' + (loaded / file.size * 100).toFixed(1) + '%');
+      statsEl.textContent = formatBytes(loaded) + ' of ' + formatBytes(file.size) +
+        (speed ? ' · ' + formatBytes(speed) + '/s · about ' + formatTime((file.size - loaded) / speed) + ' left' : '');
+    }
+    report();
+
+    async function getUrl(n, fresh) {
+      if (!fresh && urlCache[n]) return urlCache[n];
+      var batch = [n].concat(queue.slice(0, SIGN_BATCH - 1).filter(function (m) { return !urlCache[m]; }));
+      var res = await api('sign-parts', { key: up.key, uploadId: up.uploadId, partNumbers: batch });
+      Object.keys(res.urls).forEach(function (k) { urlCache[k] = res.urls[k]; });
+      return urlCache[n];
+    }
+
+    function putPart(url, blob, n) {
+      return new Promise(function (resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        job.xhrs.add(xhr);
+        xhr.open('PUT', url);
+        xhr.upload.onprogress = function (e) { inFlight[n] = e.loaded; report(); };
+        xhr.onload = function () {
+          job.xhrs.delete(xhr);
+          if (xhr.status >= 200 && xhr.status < 300) {
+            var etag = xhr.getResponseHeader('ETag');
+            if (!etag) {
+              var e = new Error('S3 accepted the part but hid its ETag. The bucket CORS rules must include ExposeHeaders: ETag.');
+              e.fatal = true;
+              return reject(e);
+            }
+            resolve(etag);
+          } else {
+            var err = new Error('S3 rejected part ' + n + ' (HTTP ' + xhr.status + ').');
+            err.status = xhr.status;
+            reject(err);
+          }
+        };
+        xhr.onerror = function () {
+          job.xhrs.delete(xhr);
+          reject(new Error('Network error while sending part ' + n + '. If this happens immediately, check the bucket CORS rules.'));
+        };
+        xhr.onabort = function () { job.xhrs.delete(xhr); reject(cancelledError()); };
+        xhr.send(blob);
+      });
+    }
+
+    async function sendPart(n) {
+      var startByte = (n - 1) * up.partSize;
+      var blob = file.slice(startByte, Math.min(startByte + up.partSize, file.size));
+      for (var attempt = 1; ; attempt++) {
+        if (job.cancelled) throw cancelledError();
+        try {
+          var url = await getUrl(n, attempt > 1);
+          var etag = await putPart(url, blob, n);
+          delete inFlight[n];
+          delete urlCache[n];
+          done[n] = etag;
+          bytesDone += blob.size;
+          report();
+          return;
+        } catch (err) {
+          delete inFlight[n];
+          if (err.cancelled || err.fatal || err.status === 401 || attempt >= MAX_ATTEMPTS) throw err;
+          setStatus('Retrying part ' + n + ' (' + err.message + ')');
+          await sleep(Math.min(30000, 2000 * Math.pow(2, attempt - 1)));
+        }
+      }
+    }
+
+    var firstError = null;
+    async function worker() {
+      while (queue.length && !firstError) {
+        var n = queue.shift();
+        try { await sendPart(n); }
+        catch (err) {
+          if (!firstError) firstError = err;
+          job.xhrs.forEach(function (x) { x.abort(); });
+        }
+      }
+    }
+    var workers = [];
+    for (var i = 0; i < CONCURRENCY; i++) workers.push(worker());
+    await Promise.all(workers);
+    if (firstError && !firstError.cancelled) throw firstError;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "Rules": [
+    {
+      "ID": "abort-abandoned-multipart-uploads",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "uploads/" },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}

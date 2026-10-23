@@ -1,0 +1,18 @@
+name = "file-manager-zivoke-uploader"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[observability]
+enabled = true
+
+[vars]
+# Change these to match your bucket.
+AWS_REGION = "ap-south-1"
+S3_BUCKET = "your-bucket-name"
+# Folder (key prefix) inside the bucket where uploads are stored.
+S3_PREFIX = "uploads/"
+
+# Secrets (set with `npx wrangler secret put <NAME>`, never commit them):
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#   UPLOAD_PASSPHRASE

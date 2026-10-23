@@ -1,0 +1,9 @@
+[
+  {
+    "AllowedOrigins": ["https://file-manager-zivoke-uploader.YOUR-SUBDOMAIN.workers.dev"],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
